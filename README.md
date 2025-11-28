@@ -2,6 +2,8 @@
 
 A lightweight, dynamic API Gateway with service discovery and user management.
 
+> WIP: This is still being developed! Use it at your own risk.
+
 ## Quick Start
 
 ```bash
