@@ -65,6 +65,7 @@ For example, to use port 5000:
 Then restart the service:
 ```bash
 docker compose up -d
+```
 
 ## API Endpoints
 
@@ -80,6 +81,65 @@ docker compose up -d
 - `GET /hermes/services/:id` - Get service details
 - `DELETE /hermes/services/:id` - Deregister service (admin only)
 - `GET /hermes/services/:id/health-logs` - Get health check history
+
+#### Dynamic Routing
+
+Hermes provides a powerful routing mechanism that forwards requests to registered services based on their name:
+
+- `ANY /hermes/route/:serviceName/*path` - Route any HTTP method to a registered service
+
+**How it works:**
+
+1. **Service Lookup**: Hermes extracts the `:serviceName` from the URL and queries the service registry
+2. **Health Check**: Only routes to services with `healthy` status (passed recent health checks)
+3. **Load Balancing**: If multiple healthy instances exist with the same name, routes to the first available (future: round-robin)
+4. **Request Forwarding**: Preserves the HTTP method, headers, query parameters, and request body
+5. **Path Preservation**: The `*path` segment is appended to the service's base URL
+
+**Example Flow:**
+
+```bash
+# 1. Register a service named "user-api"
+curl -X POST http://localhost:4000/hermes/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "user-api",
+    "host": "192.168.1.100",
+    "port": 3000,
+    "health_check_path": "/health"
+  }'
+
+# 2. Route a request through Hermes
+curl -X GET http://localhost:4000/hermes/route/user-api/v1/users/123 \
+  -H "Authorization: Bearer <token>" \
+  -H "X-Request-ID: abc-123"
+
+# 3. Hermes forwards to: http://192.168.1.100:3000/v1/users/123
+#    - Preserves: HTTP method (GET), headers (Authorization, X-Request-ID)
+#    - Adds: X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host
+```
+
+**Multiple Instances:**
+
+If you register multiple instances of the same service (e.g., for high availability):
+
+```bash
+# Register instance 1
+curl -X POST http://localhost:4000/hermes/register \
+  -d '{"name":"api","host":"10.0.0.1","port":8080,"health_check_path":"/health"}'
+
+# Register instance 2
+curl -X POST http://localhost:4000/hermes/register \
+  -d '{"name":"api","host":"10.0.0.2","port":8080,"health_check_path":"/health"}'
+
+# Hermes routes to the first healthy instance found
+curl http://localhost:4000/hermes/route/api/data
+```
+
+**Error Handling:**
+
+- **404 Not Found**: Service name not registered
+- **503 Service Unavailable**: All instances are unhealthy or service not found
 
 #### Users (Proxied to Aegis)
 - `GET /hermes/users` - List users (admin only)
