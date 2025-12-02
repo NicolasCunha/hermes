@@ -68,12 +68,21 @@ func Close() error {
 }
 
 // getDBPath returns the database file path from environment or default
+// getDBPath determines the appropriate database path based on the environment.
+// Priority:
+//  1. HERMES_DB_PATH environment variable
+//  2. /app/data/hermes.db (if /app/data exists - Docker container)
+//  3. ./hermes.db (development fallback)
 func getDBPath() string {
 	path := os.Getenv("HERMES_DB_PATH")
 	if path == "" {
-		// Default to root folder for both dev and container
-		// In container, this will be mapped to a volume
-		path = "./hermes.db"
+		// Default to /app/data for container persistence
+		// Falls back to ./hermes.db in dev mode
+		if _, err := os.Stat("/app/data"); err == nil {
+			path = "/app/data/hermes.db"
+		} else {
+			path = "./hermes.db"
+		}
 	}
 	return path
 }

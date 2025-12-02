@@ -2,7 +2,7 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"log"
 	"os"
 	"strconv"
@@ -11,8 +11,9 @@ import (
 
 // Config represents the complete Hermes configuration loaded from environment variables.
 type Config struct {
-	Server ServerConfig
-	Auth   AuthConfig
+	Server    ServerConfig
+	Auth      AuthConfig
+	Bootstrap BootstrapConfig
 }
 
 // ServerConfig contains HTTP server settings.
@@ -31,7 +32,21 @@ type AuthConfig struct {
 	AegisTimeout time.Duration
 }
 
+// BootstrapConfig contains initial admin user settings.
+type BootstrapConfig struct {
+	AdminUser     string
+	AdminPassword string
+}
+
 // Load reads configuration from environment variables with sensible defaults.
+// All environment variables use the HERMES_ prefix:
+//   - HERMES_SERVER_HOST (default: "0.0.0.0")
+//   - HERMES_SERVER_PORT (default: 8080)
+//   - HERMES_AEGIS_URL (default: "http://localhost:3100/api")
+//   - HERMES_ADMIN_USER (default: "hermes")
+//   - HERMES_ADMIN_PASSWORD (default: "hermes123")
+//
+// Returns an error if validation fails (e.g., invalid port number).
 func Load() (*Config, error) {
 	cfg := &Config{
 		Server: ServerConfig{
@@ -46,17 +61,23 @@ func Load() (*Config, error) {
 			AegisURL:     getEnv("HERMES_AEGIS_URL", "http://localhost:3100/api"),
 			AegisTimeout: getEnvDuration("HERMES_AEGIS_TIMEOUT", 5*time.Second),
 		},
+		Bootstrap: BootstrapConfig{
+			AdminUser:     getEnv("HERMES_ADMIN_USER", "hermes"),
+			AdminPassword: getEnv("HERMES_ADMIN_PASSWORD", "hermes123"),
+		},
 	}
 
 	// Validate configuration
 	if err := validate(cfg); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+		log.Printf("Configuration validation failed: %v", err)
+		return nil, errors.New("invalid configuration")
 	}
 
 	// Log loaded configuration
 	log.Printf("Configuration loaded:")
 	log.Printf("  Server: %s:%d", cfg.Server.Host, cfg.Server.Port)
 	log.Printf("  Aegis URL: %s", cfg.Auth.AegisURL)
+	log.Printf("  Bootstrap Admin: %s", cfg.Bootstrap.AdminUser)
 
 	return cfg, nil
 }
@@ -65,15 +86,18 @@ func Load() (*Config, error) {
 func validate(cfg *Config) error {
 	// Validate server port
 	if cfg.Server.Port < 1 || cfg.Server.Port > 65535 {
-		return fmt.Errorf("invalid server port: %d (must be 1-65535)", cfg.Server.Port)
+		log.Printf("Invalid server port: %d (must be 1-65535)", cfg.Server.Port)
+		return errors.New("invalid server port")
 	}
 
 	// Validate timeouts
 	if cfg.Server.ReadTimeout <= 0 {
-		return fmt.Errorf("invalid read timeout: %v (must be positive)", cfg.Server.ReadTimeout)
+		log.Printf("Invalid read timeout: %v (must be positive)", cfg.Server.ReadTimeout)
+		return errors.New("invalid read timeout")
 	}
 	if cfg.Server.WriteTimeout <= 0 {
-		return fmt.Errorf("invalid write timeout: %v (must be positive)", cfg.Server.WriteTimeout)
+		log.Printf("Invalid write timeout: %v (must be positive)", cfg.Server.WriteTimeout)
+		return errors.New("invalid write timeout")
 	}
 
 	return nil
@@ -110,12 +134,14 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	return defaultValue
 }
 
-// GetLogLevel returns the configured log level.
+// GetLogLevel returns the configured log level from HERMES_LOG_LEVEL.
+// Valid values: "debug", "info", "warn", "error"
+// Default: "info"
 func GetLogLevel() string {
 	return getEnv("HERMES_LOG_LEVEL", "info")
 }
 
-// IsDebugMode returns true if debug mode is enabled.
+// IsDebugMode returns true if debug mode is enabled (HERMES_LOG_LEVEL=debug).
 func IsDebugMode() bool {
 	return GetLogLevel() == "debug"
 }

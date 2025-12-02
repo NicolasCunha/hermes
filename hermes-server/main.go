@@ -1,23 +1,23 @@
+// Package main is the entry point for the Hermes API Gateway server.
+// It initializes all components, configures routes, and starts the HTTP server.
 package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"nfcunha/hermes/hermes-server/api"
+	"nfcunha/hermes/hermes-server/core"
+	"nfcunha/hermes/hermes-server/core/bootstrap"
+	"nfcunha/hermes/hermes-server/core/domain/healthlog"
 	"nfcunha/hermes/hermes-server/database"
-	"nfcunha/hermes/hermes-server/services/aegis"
-	"nfcunha/hermes/hermes-server/services/health"
-	"nfcunha/hermes/hermes-server/services/proxy"
-	"nfcunha/hermes/hermes-server/services/registry"
-	"nfcunha/hermes/hermes-server/services/router"
+	"nfcunha/hermes/hermes-server/handler"
 	"nfcunha/hermes/hermes-server/utils/config"
 )
 
@@ -30,10 +30,12 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	log.Println("Configuration loaded successfully")
 	// Initialize database
 	if err := database.Initialize(); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
+
 	defer func() {
 		if err := database.Close(); err != nil {
 			log.Printf("Error closing database: %v", err)
@@ -41,12 +43,22 @@ func main() {
 	}()
 
 	// Initialize Aegis client
-	aegisClient := aegis.NewClient(cfg.Auth.AegisURL, cfg.Auth.AegisTimeout)
+	aegisClient := core.NewAegisClient(cfg.Auth.AegisURL, cfg.Auth.AegisTimeout)
 	log.Println("Testing Aegis connectivity...")
 	if err := aegisClient.Health(); err != nil {
 		log.Fatalf("Failed to connect to Aegis at %s: %v", cfg.Auth.AegisURL, err)
 	}
 	log.Println("Aegis connection successful")
+
+	// Bootstrap admin user
+	bootstrapper := bootstrap.NewAdminBootstrapper(
+		cfg.Auth.AegisURL,
+		cfg.Bootstrap.AdminUser,
+		cfg.Bootstrap.AdminPassword,
+	)
+	if err := bootstrapper.EnsureAdminUser(); err != nil {
+		log.Fatalf("Failed to bootstrap admin user: %v", err)
+	}
 
 	// Set Gin mode based on log level
 	if config.IsDebugMode() {
@@ -60,26 +72,29 @@ func main() {
 	// Create Gin engine with logging middleware
 	engine := gin.New()
 	engine.Use(gin.Recovery())
-	
+
 	if config.IsDebugMode() {
 		engine.Use(gin.Logger())
 	}
 
-	// Create services
-	rtr := router.New()
-	prx := proxy.New()
-	reg := registry.New(database.GetDB())
+	// Add CORS middleware to allow requests from React frontend
+	engine.Use(handler.CORSMiddleware())
 
-	// Start health checker
-	checker := health.New(reg)
+	// Create services
+	prx := core.NewProxyService()
+	reg := core.NewServiceRegistry(database.GetDB())
+
+	// Create health log repository and health checker
+	healthLogRepo := healthlog.NewRepository(database.GetDB())
+	checker := core.NewHealthChecker(reg, healthLogRepo)
 	go checker.Start()
 	defer checker.Stop()
 
 	// Register routes
-	api.RegisterRoutes(engine, rtr, prx, reg, aegisClient, cfg.Auth.AegisURL)
+	handler.RegisterRoutes(engine, prx, reg, aegisClient, cfg.Auth.AegisURL)
 
 	// Create HTTP server
-	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	addr := cfg.Server.Host + ":" + strconv.Itoa(cfg.Server.Port)
 	server := &http.Server{
 		Addr:           addr,
 		Handler:        engine,

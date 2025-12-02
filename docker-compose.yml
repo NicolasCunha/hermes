@@ -1,0 +1,49 @@
+services:
+  aegis:
+    image: cunhanicolas/aegis:latest
+    container_name: aegis-hermes
+    ports:
+      - "3200:3100"
+    volumes:
+      - aegis-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--fail", "http://localhost:3100/api/aegis/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - gateway-network
+
+  hermes:
+    image: cunhanicolas/hermes:latest
+    container_name: hermes
+    ports:
+      - "4000:8080"
+    env_file:
+      - config/hermes.env
+    volumes:
+      - hermes-data:/app/data
+    restart: unless-stopped
+    depends_on:
+      aegis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - gateway-network
+
+volumes:
+  aegis-data:
+    driver: local
+  hermes-data:
+    driver: local
+
+networks:
+  gateway-network:
+    driver: bridge
