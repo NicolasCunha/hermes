@@ -66,36 +66,6 @@ Then restart the service:
 ```bash
 docker compose up -d
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│           Hermes Container (Port 8080)          │
-│  ┌──────────────────────────────────────────┐   │
-│  │  NGINX (Frontend Proxy)                  │   │
-│  │  - Serves React UI on /                  │   │
-│  │  - Proxies /hermes/* to backend          │   │
-│  └────────────┬─────────────────────────────┘   │
-│               │                                  │
-│  ┌────────────▼─────────────────────────────┐   │
-│  │  Go Backend (Port 8081)                  │   │
-│  │  - Service registry & health checks      │   │
-│  │  - Authentication via Aegis              │   │
-│  │  - SQLite database                       │   │
-│  └──────────────────────────────────────────┘   │
-│                                                  │
-│  Managed by supervisord                         │
-└─────────────────────────────────────────────────┘
-         │
-         │ JWT Auth
-         ▼
-┌────────────────────┐
-│  Aegis Container   │
-│  (Port 3100)       │
-│  Auth Service      │
-└────────────────────┘
-```
-
 ## API Endpoints
 
 ### Public Endpoints
