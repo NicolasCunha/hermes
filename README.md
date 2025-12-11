@@ -1,3 +1,5 @@
+> This is a personal learning project. You’re welcome to use it as a reference or as a starting point for your own ideas. However, I strongly recommend using more mature and stable solutions available in the market rather than relying on this project for production needs.
+
 # Hermes API Gateway
 
 A lightweight, dynamic API Gateway with service discovery, health monitoring, and user management. Built with Go and React.
